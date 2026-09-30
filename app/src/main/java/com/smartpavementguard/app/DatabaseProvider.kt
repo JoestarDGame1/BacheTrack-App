@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.room.Room
 
 object DatabaseProvider {
-
+//Jared Ama a tiburcio y sus pañales
     private var INSTANCE: AppDatabase? = null
 
     fun getDatabase(context: Context): AppDatabase {
