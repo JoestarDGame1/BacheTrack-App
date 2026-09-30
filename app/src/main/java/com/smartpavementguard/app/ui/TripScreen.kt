@@ -341,7 +341,7 @@ fun TripScreen(
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(
                 containerColor = AquaPrimary,
-                contentColor = Color.Black
+                contentColor = Color.White
             )
         ) {
             Text("Finalizar Viaje")

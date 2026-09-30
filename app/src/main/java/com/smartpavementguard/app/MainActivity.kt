@@ -50,7 +50,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MediaType.Companion.toMediaType
 import kotlin.concurrent.thread
 
-const val BASE_URL = "http://192.168.1.108:3000"
+const val BASE_URL = "http://10.0.255.133:3000"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -157,7 +157,7 @@ fun RoleSelectionScreen(
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = AquaPrimary,
-                        contentColor = Color.Black
+                        contentColor = Color.White
                     )
                 ) {
                     Text("Soy ciudadano")
@@ -309,7 +309,7 @@ fun LoginScreen(onLogin: () -> Unit, onRegister: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = AquaPrimary,
-                        contentColor = Color.Black
+                        contentColor = Color.White
                     )
                 ) {
                     Text("Iniciar sesión")
@@ -483,7 +483,7 @@ fun RegisterScreen(onRegister: () -> Unit, onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = AquaPrimary,
-                        contentColor = Color.Black
+                        contentColor = Color.White
                     )
                 ) {
                     Text("Registrar trabajador")
@@ -572,7 +572,7 @@ fun HomeScreen(
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(
                 containerColor = AquaPrimary,
-                contentColor = Color.Black
+                contentColor = Color.White
             )
         ) {
             Text("Iniciar Monitoreo")
@@ -724,7 +724,7 @@ fun ManualReportScreen(
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(
                 containerColor = AquaPrimary,
-                contentColor = Color.Black
+                contentColor = Color.White
             )
         ) {
             Text("Tomar Foto")
@@ -836,7 +836,7 @@ fun ManualReportScreen(
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(
                 containerColor = AquaYellow,
-                contentColor = Color.Black
+                contentColor = Color.White
             )
         ) {
             Text("Enviar Reporte")
