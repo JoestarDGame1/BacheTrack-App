@@ -54,6 +54,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import kotlin.concurrent.thread
 
 const val BASE_URL = "http://10.0.255.133:3000"
+const val IA_URL = "http://10.0.255.133:8000"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -623,6 +624,49 @@ fun HomeScreen(
         }
     }
 }
+
+fun detectarBache(
+    imageBytes: ByteArray,
+    apiUrl: String
+): JSONObject {
+
+    val client = OkHttpClient()
+
+    val imageBody = imageBytes.toRequestBody(
+        "image/jpeg".toMediaType()
+    )
+
+    val multipartBody = MultipartBody.Builder()
+        .setType(MultipartBody.FORM)
+        .addFormDataPart(
+            "foto",          // IMPORTANTE: FastAPI espera "foto"
+            "imagen.jpg",
+            imageBody
+        )
+        .build()
+
+    val request = Request.Builder()
+        .url("$apiUrl/detectar")
+        .post(multipartBody)
+        .build()
+
+    client.newCall(request).execute().use { response ->
+
+        val responseText = response.body?.string()
+
+        if (!response.isSuccessful) {
+            throw Exception(
+                "Error IA ${response.code}: $responseText"
+            )
+        }
+
+        if (responseText.isNullOrBlank()) {
+            throw Exception("La IA respondió vacío")
+        }
+
+        return JSONObject(responseText)
+    }
+}
 @Composable
 fun ManualReportScreen(
     activity: ComponentActivity,
@@ -793,64 +837,161 @@ fun ManualReportScreen(
                     try {
                         runBlocking {
 
-                            // 1. Subir foto a Supabase Storage
-                            var imageUrl: String? = null
+                            // ==========================================
+                            // 1. OBTENER LA FOTO
+                            // ==========================================
 
-                            photoUri?.let { uri ->
+                            val uri = photoUri
 
-                                val inputStream =
-                                    context.contentResolver.openInputStream(uri)
-
-                                val bytes = inputStream?.readBytes()
-
-                                inputStream?.close()
-
-                                if (bytes != null) {
-
-                                    val fileName =
-                                        "reporte_${System.currentTimeMillis()}.jpg"
-
-                                    SupabaseManager.client.storage
-                                        .from("report-images")
-                                        .upload(fileName, bytes)
-
-                                    imageUrl = SupabaseManager.client.storage
-                                        .from("report-images")
-                                        .publicUrl(fileName)
-
-                                    android.util.Log.d(
-                                        "SUPABASE_MANUAL",
-                                        "FOTO SUBIDA: $imageUrl"
-                                    )
-                                }
+                            if (uri == null) {
+                                message = "Debes tomar una foto primero"
+                                return@runBlocking
                             }
 
-                            // 2. Crear reporte
+                            message = "Analizando imagen con IA..."
+
+                            val inputStream =
+                                context.contentResolver.openInputStream(uri)
+
+                            val bytes = inputStream?.readBytes()
+
+                            inputStream?.close()
+
+                            if (bytes == null) {
+                                message = "No se pudo leer la imagen"
+                                return@runBlocking
+                            }
+
+
+                            // ==========================================
+                            // 2. VALIDAR FOTO CON IA
+                            // ==========================================
+
+                            val resultadoIA = detectarBache(
+                                imageBytes = bytes,
+                                apiUrl = IA_URL
+                            )
+
+                            val hayBache =
+                                resultadoIA.getBoolean("hay_bache")
+
+                            val total =
+                                resultadoIA.getInt("total")
+
+
+                            android.util.Log.d(
+                                "BACHETRACK_IA",
+                                resultadoIA.toString()
+                            )
+
+
+                            // ==========================================
+                            // 3. SI NO HAY BACHE, CANCELAR
+                            // ==========================================
+
+                            if (!hayBache || total == 0) {
+
+                                message =
+                                    "No se detectó ningún bache. El reporte no fue enviado."
+
+                                return@runBlocking
+                            }
+
+
+                            // ==========================================
+                            // 4. OBTENER CONFIANZA
+                            // ==========================================
+
+                            val baches =
+                                resultadoIA.getJSONArray("baches")
+
+                            val primerBache =
+                                baches.getJSONObject(0)
+
+                            val confianza =
+                                primerBache.getDouble("confianza")
+
+                            val areaRelativa =
+                                primerBache.getDouble("area_relativa")
+
+
+                            android.util.Log.d(
+                                "BACHETRACK_IA",
+                                "Bache detectado | confianza=$confianza | area=$areaRelativa"
+                            )
+
+
+                            // ==========================================
+                            // 5. SUBIR FOTO A SUPABASE
+                            // ==========================================
+
+                            message = "Bache detectado. Enviando reporte..."
+
+                            val fileName =
+                                "reporte_${System.currentTimeMillis()}.jpg"
+
+                            SupabaseManager.client.storage
+                                .from("report-images")
+                                .upload(fileName, bytes)
+
+                            val imageUrl =
+                                SupabaseManager.client.storage
+                                    .from("report-images")
+                                    .publicUrl(fileName)
+
+
+                            android.util.Log.d(
+                                "SUPABASE_MANUAL",
+                                "FOTO SUBIDA: $imageUrl"
+                            )
+
+
+                            // ==========================================
+                            // 6. CREAR REPORTE
+                            // ==========================================
+
                             val data = Report(
                                 type = "manual",
-                                description = if (description.isBlank()) {
-                                    "Reporte ciudadano"
-                                } else {
-                                    description
-                                },
-                                latitude = latitude ?: 18.8467431,
-                                longitude = longitude ?: -97.1305888,
-                                impact = 0f,
+
+                                description =
+                                    if (description.isBlank()) {
+                                        "Reporte ciudadano"
+                                    } else {
+                                        description
+                                    },
+
+                                latitude =
+                                    latitude ?: 18.8467431,
+
+                                longitude =
+                                    longitude ?: -97.1305888,
+
+                                impact = areaRelativa.toFloat(),
+
                                 speed = 0,
+
                                 priority = 50,
+
                                 status = "reportado",
+
                                 confirmations = 1,
+
                                 image_url = imageUrl
                             )
 
-                            // 3. Guardarlo en Supabase
+
+                            // ==========================================
+                            // 7. GUARDAR REPORTE
+                            // ==========================================
+
                             SupabaseManager.client
                                 .from("reports")
                                 .insert(data)
 
+
                             android.util.Log.d(
                                 "SUPABASE_MANUAL",
-                                "REPORTE MANUAL GUARDADO"
+                                "REPORTE VALIDADO POR IA Y GUARDADO"
                             )
                         }
 
