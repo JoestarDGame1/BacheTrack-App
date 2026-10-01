@@ -5,6 +5,7 @@ import io.github.jan.supabase.postgrest.Postgrest
 import com.smartpavementguard.app.SupabaseManager
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.storage.Storage
 
 object SupabaseManager {
 
@@ -13,6 +14,7 @@ object SupabaseManager {
         supabaseKey = "sb_publishable_i56ZW1XnhmPLXZ_TLrmfXw_qxPa1yyE"
     ) {
         install(Postgrest)
+        install(Storage)
     }
 
 }

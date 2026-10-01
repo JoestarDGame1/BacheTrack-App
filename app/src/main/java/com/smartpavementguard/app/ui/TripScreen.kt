@@ -62,6 +62,23 @@ fun distanceMeters(
     return r * c
 }
 
+data class DetectedPothole(
+    val impact: Float,
+    val latitude: Double,
+    val longitude: Double,
+    val speed: Int,
+    val detectedAt: Long = System.currentTimeMillis()
+)
+
+fun calculatePriority(impact: Float): Int {
+    return when {
+        impact >= 25f -> 90
+        impact >= 20f -> 70
+        impact >= 16f -> 50
+        else -> 30
+    }
+}
+
 @Composable
 fun TripScreen(
     activity: ComponentActivity,
@@ -140,7 +157,9 @@ fun TripScreen(
         }
     }
 
-    val anomalies = remember { mutableStateListOf<Float>() }
+    val anomalies = remember {
+        mutableStateListOf<DetectedPothole>()
+    }
 
     // Variables para filtro estadístico de terreno irregular / camino rocoso
     val recentAccels = remember { FloatArray(50) }
@@ -221,8 +240,26 @@ fun TripScreen(
 
                         if (!isRockyRoad && isAnomalousPeak && isCoolingTimePassed) {
                             lastImpactTime = now
-                            anomalies.add(magnitude)
-                            status = "Bache detectado (%.1f m/s²)".format(magnitude)
+
+                            val currentLat = latitude
+                            val currentLon = longitude
+
+                            if (currentLat != null && currentLon != null) {
+
+                                anomalies.add(
+                                    DetectedPothole(
+                                        impact = magnitude,
+                                        latitude = currentLat,
+                                        longitude = currentLon,
+                                        speed = vehicleSpeedKmH.toInt()
+                                    )
+                                )
+
+                                status = "Bache detectado (%.1f m/s²)".format(magnitude)
+
+                            } else {
+                                status = "Impacto detectado, esperando ubicación GPS"
+                            }
                         } else if (isRockyRoad) {
                             status = "Terreno irregular / Camino rocoso"
                         }
@@ -347,7 +384,6 @@ fun TripScreen(
             Text("Finalizar Viaje")
         }
     }
-
     if (showDialog) {
         AlertDialog(
             onDismissRequest = { showDialog = false },
@@ -377,27 +413,30 @@ fun TripScreen(
                                         "ENTRO AL FOREACH"
                                     )
 
-                                    anomalies.forEach { impactValue ->
+                                    anomalies.forEach { pothole ->
 
                                         android.util.Log.d(
                                             "DEBUG_AQUAROAD",
                                             "INTERNET = ${NetworkUtils.isInternetAvailable(context)}"
                                         )
 
-                                        val currentSpeed = vehicleSpeedKmH.toInt()
+                                        val currentSpeed = pothole.speed
 
                                         if (!NetworkUtils.isInternetAvailable(context)) {
 
                                             val data = Report(
                                                 type = "automatico",
                                                 description = "Bache detectado automáticamente",
-                                                latitude = latitude ?: 18.8467431,
-                                                longitude = longitude ?: -97.1305888,
-                                                impact = impactValue,
+                                                latitude = pothole.latitude,
+                                                longitude = pothole.longitude,
+                                                impact = pothole.impact,
                                                 speed = currentSpeed,
-                                                priority = 70,
+                                                priority = calculatePriority(pothole.impact),
                                                 status = "reportado",
-                                                confirmations = 1
+                                                confirmations = 1,
+                                                verified = false,
+                                                category = "bache",
+                                                municipality_status = "reportado"
                                             )
 
                                             dao.insert(
@@ -428,28 +467,33 @@ fun TripScreen(
 
                                         val existingReport = reports.find {
                                             distanceMeters(
-                                                latitude ?: 0.0,
-                                                longitude ?: 0.0,
+                                                pothole.latitude,
+                                                pothole.longitude,
                                                 it.latitude,
                                                 it.longitude
                                             ) < 20
                                         }
+
+                                        android.util.Log.d(
+                                            "DEBUG_CONFIRMACION",
+                                            "Reportes encontrados: ${reports.size} | " +
+                                                    "Bache actual: ${pothole.latitude}, ${pothole.longitude} | " +
+                                                    "Existente: ${existingReport?.id} | " +
+                                                    "Confirmaciones actuales: ${existingReport?.confirmations}"
+                                        )
 
                                         if (existingReport != null && existingReport.id != null) {
 
                                             val newConfirmations =
                                                 (existingReport.confirmations ?: 1) + 1
 
-                                            var verified = false
-                                            var category = "bache"
+                                            val verified = newConfirmations >= 3
+                                            val category = existingReport.category ?: "bache"
 
-                                            if (newConfirmations >= 3) {
-                                                verified = true
-                                            }
-
-                                            if (newConfirmations >= 5) {
-                                                category = "tope"
-                                            }
+                                            val newPriority = maxOf(
+                                                existingReport.priority,
+                                                calculatePriority(pothole.impact)
+                                            )
 
                                             SupabaseManager.client
                                                 .from("reports")
@@ -458,6 +502,7 @@ fun TripScreen(
                                                         set("confirmations", newConfirmations)
                                                         set("verified", verified)
                                                         set("category", category)
+                                                        set("priority", newPriority)
                                                     }
                                                 ) {
                                                     filter {
@@ -465,11 +510,22 @@ fun TripScreen(
                                                     }
                                                 }
 
-                                            android.util.Log.d(
-                                                "SUPABASE",
-                                                "CONFIRMACION AGREGADA"
-                                            )
+                                            val comprobacion = SupabaseManager.client
+                                                .from("reports")
+                                                .select {
+                                                    filter {
+                                                        eq("id", existingReport.id!!)
+                                                    }
+                                                }
+                                                .decodeSingle<Report>()
 
+                                            android.util.Log.d(
+                                                "SUPABASE_DEBUG",
+                                                "ID=${comprobacion.id} | " +
+                                                        "CONFIRMATIONS=${comprobacion.confirmations} | " +
+                                                        "VERIFIED=${comprobacion.verified} | " +
+                                                        "SE INTENTO GUARDAR=$newConfirmations"
+                                            )
                                         } else {
 
                                             val data = Report(
@@ -477,11 +533,14 @@ fun TripScreen(
                                                 description = "Bache detectado automáticamente",
                                                 latitude = latitude ?: 18.8467431,
                                                 longitude = longitude ?: -97.1305888,
-                                                impact = impactValue,
+                                                impact = pothole.impact,
                                                 speed = currentSpeed,
-                                                priority = 70,
+                                                priority = calculatePriority(pothole.impact),
                                                 status = "reportado",
-                                                confirmations = 1
+                                                confirmations = 1,
+                                                verified = false,
+                                                category = "bache",
+                                                municipality_status = "reportado"
                                             )
 
                                             if (NetworkUtils.isInternetAvailable(context)) {

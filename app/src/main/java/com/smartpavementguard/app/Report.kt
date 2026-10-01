@@ -31,5 +31,7 @@ data class Report(
 
     val municipality_status: String? = "reportado",
 
-    val repaired_at: String? = null
+    val repaired_at: String? = null,
+
+    val image_url: String? = null
 )

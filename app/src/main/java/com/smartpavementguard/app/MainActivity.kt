@@ -45,6 +45,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalInspectionMode
 import okhttp3.MultipartBody
+import io.github.jan.supabase.storage.storage
+import io.github.jan.supabase.postgrest.from
+import kotlinx.coroutines.runBlocking
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MediaType.Companion.toMediaType
@@ -788,50 +791,86 @@ fun ManualReportScreen(
 
                 thread {
                     try {
-                        val client = OkHttpClient()
+                        runBlocking {
 
-                        val multipartBuilder = MultipartBody.Builder()
-                            .setType(MultipartBody.FORM)
-                            .addFormDataPart("userId", "1")
-                            .addFormDataPart("description", description)
-                            .addFormDataPart("latitude", (latitude ?: 18.88).toString())
-                            .addFormDataPart("longitude", (longitude ?: -96.92).toString())
+                            // 1. Subir foto a Supabase Storage
+                            var imageUrl: String? = null
 
-                        photoUri?.let { uri ->
-                            val inputStream = context.contentResolver.openInputStream(uri)
-                            val bytes = inputStream?.readBytes()
-                            inputStream?.close()
+                            photoUri?.let { uri ->
 
-                            if (bytes != null) {
-                                val photoBody = bytes.toRequestBody("image/jpeg".toMediaType())
+                                val inputStream =
+                                    context.contentResolver.openInputStream(uri)
 
-                                multipartBuilder.addFormDataPart(
-                                    "photo",
-                                    "reporte_${System.currentTimeMillis()}.jpg",
-                                    photoBody
-                                )
+                                val bytes = inputStream?.readBytes()
+
+                                inputStream?.close()
+
+                                if (bytes != null) {
+
+                                    val fileName =
+                                        "reporte_${System.currentTimeMillis()}.jpg"
+
+                                    SupabaseManager.client.storage
+                                        .from("report-images")
+                                        .upload(fileName, bytes)
+
+                                    imageUrl = SupabaseManager.client.storage
+                                        .from("report-images")
+                                        .publicUrl(fileName)
+
+                                    android.util.Log.d(
+                                        "SUPABASE_MANUAL",
+                                        "FOTO SUBIDA: $imageUrl"
+                                    )
+                                }
                             }
-                        }
 
-                        val body = multipartBuilder.build()
+                            // 2. Crear reporte
+                            val data = Report(
+                                type = "manual",
+                                description = if (description.isBlank()) {
+                                    "Reporte ciudadano"
+                                } else {
+                                    description
+                                },
+                                latitude = latitude ?: 18.8467431,
+                                longitude = longitude ?: -97.1305888,
+                                impact = 0f,
+                                speed = 0,
+                                priority = 50,
+                                status = "reportado",
+                                confirmations = 1,
+                                image_url = imageUrl
+                            )
 
-                        val request = Request.Builder()
-                            .url("$BASE_URL/manual-report")
-                            .post(body)
-                            .build()
+                            // 3. Guardarlo en Supabase
+                            SupabaseManager.client
+                                .from("reports")
+                                .insert(data)
 
-                        client.newCall(request).execute().use { response ->
-                            println("RESPUESTA BACKEND: ${response.body?.string()}")
+                            android.util.Log.d(
+                                "SUPABASE_MANUAL",
+                                "REPORTE MANUAL GUARDADO"
+                            )
                         }
 
                         message = "Reporte enviado correctamente"
                         description = ""
+                        photoUri = null
 
                     } catch (e: Exception) {
-                        e.printStackTrace()
+
+                        android.util.Log.e(
+                            "SUPABASE_MANUAL",
+                            "ERROR EN REPORTE MANUAL",
+                            e
+                        )
+
                         message = "Error al enviar reporte"
                     }
                 }
+
+
             },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(
