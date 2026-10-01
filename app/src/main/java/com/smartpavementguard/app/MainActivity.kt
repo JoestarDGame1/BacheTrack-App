@@ -995,7 +995,7 @@ fun ManualReportScreen(
                             )
                         }
 
-                        message = "Reporte enviado correctamente"
+                        message = "Gracias por su Reporte!!!"
                         description = ""
                         photoUri = null
 
